@@ -23,7 +23,7 @@ SECRET = os.getenv("OJAS_SECRET", "change-this-in-production-ojas-2026")
 ALGO = "HS256"
 TOKEN_DAYS = 30
 DB_URL = os.getenv("OJAS_DB", "sqlite:///./ojas.db")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")  # from Google Cloud Console, see README
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()  # strip: dashboard pastes often add whitespace
 
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -210,8 +210,9 @@ def google_login(b: GoogleIn, s: Session = Depends(db)):
             raise HTTPException(400, "Token audience mismatch")
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(400, "Invalid Google token")
+    except Exception as e:
+        print("GOOGLE VERIFY FAILED:", repr(e), flush=True)
+        raise HTTPException(400, "Google verification failed: " + str(e)[:200])
     u = s.query(User).filter_by(email=email).first()
     if not u:
         u = User(name=(info.get("name") or email.split("@")[0])[:40],
