@@ -63,6 +63,7 @@ class User(Base):
     dosha = Column(String(20), default="Vata")
     veg = Column(String(20), default="Veg")
     sleep_time = Column(String(10), default="23:00")
+    phone = Column(String(20), default="")
     xp = Column(Integer, default=0)
     created = Column(DateTime, default=datetime.utcnow)
     checkins = relationship("Checkin", back_populates="user", cascade="all,delete")
@@ -119,11 +120,17 @@ class Journal(Base):
     user = relationship("User", back_populates="journals")
 
 Base.metadata.create_all(bind=engine)
+# lightweight migration for databases created before phone existed
+try:
+    with engine.begin() as _c:
+        _c.exec_driver_sql("ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ''")
+except Exception:
+    pass
 
 # ---------- schemas ----------
 class Signup(BaseModel):
     name: str = "friend"; email: EmailStr; password: str
-    goal: str = "Deep sleep"; dosha: str = "Vata"; veg: str = "Veg"; sleep_time: str = "23:00"
+    goal: str = "Deep sleep"; dosha: str = "Vata"; veg: str = "Veg"; sleep_time: str = "23:00"; phone: str = ""
 class Token(BaseModel):
     access_token: str; token_type: str = "bearer"
 class CheckinIn(BaseModel):
@@ -180,7 +187,7 @@ def signup(b: Signup, s: Session = Depends(db)):
     if s.query(User).filter_by(email=b.email.lower()).first():
         raise HTTPException(400, "Email already registered")
     u = User(name=b.name[:40], email=b.email.lower(), pw=pwd.hash(b.password[:72]),
-             goal=b.goal, dosha=b.dosha, veg=b.veg, sleep_time=b.sleep_time)
+             goal=b.goal, dosha=b.dosha, veg=b.veg, sleep_time=b.sleep_time, phone=(b.phone or "")[:20])
     s.add(u); s.commit(); s.refresh(u)
     for t in ["Jal — 8 glasses of water", "Post-dinner walk, 10 min",
               "Screens away by 11pm", "Protein at lunch", "2 min breath or pages"]:
@@ -228,6 +235,23 @@ def google_login(b: GoogleIn, s: Session = Depends(db)):
 @app.get("/me")
 def me(u: User = Depends(current)):
     return {"name": u.name, "email": u.email, "goal": u.goal, "dosha": u.dosha,
+            "veg": u.veg, "sleep_time": u.sleep_time, "xp": u.xp, "phone": u.phone or ""}
+
+class ProfileIn(BaseModel):
+    name: str = ""; phone: str = ""; goal: str = ""
+    dosha: str = ""; veg: str = ""; sleep_time: str = ""
+
+@app.put("/me")
+def update_me(b: ProfileIn, u: User = Depends(current), s: Session = Depends(db)):
+    if b.name.strip(): u.name = b.name.strip()[:40]
+    ph = "".join(ch for ch in b.phone if ch.isdigit())[-10:]
+    if len(ph) == 10: u.phone = ph
+    if b.goal: u.goal = b.goal[:60]
+    if b.dosha: u.dosha = b.dosha[:20]
+    if b.veg: u.veg = b.veg[:20]
+    if b.sleep_time: u.sleep_time = b.sleep_time[:10]
+    s.commit()
+    return {"name": u.name, "phone": u.phone or "", "goal": u.goal, "dosha": u.dosha,
             "veg": u.veg, "sleep_time": u.sleep_time, "xp": u.xp}
 
 @app.post("/checkins")
