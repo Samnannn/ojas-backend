@@ -23,7 +23,8 @@ SECRET = os.getenv("OJAS_SECRET", "change-this-in-production-ojas-2026")
 ALGO = "HS256"
 TOKEN_DAYS = 30
 DB_URL = os.getenv("OJAS_DB", "sqlite:///./ojas.db")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()  # strip: dashboard pastes often add whitespace
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+ADMIN_KEY = os.getenv("OJAS_ADMIN_KEY", "")  # strip: dashboard pastes often add whitespace
 
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -328,6 +329,16 @@ def insights(u: User = Depends(current), s: Session = Depends(db)):
             "xp": u.xp,
             "message": "Seal today's check-in to begin." if not valid else
                        ("Fix the sleep hour first — everything follows." if sum(valid)/len(valid) < 55 else "Luminous rhythm. Guard it.")}
+
+@app.get("/admin/users")
+def admin_users(key: str = "", s: Session = Depends(db)):
+    if not ADMIN_KEY or key != ADMIN_KEY:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+    rows = s.query(User).order_by(User.id.desc()).all()
+    return {"count": len(rows),
+            "users": [{"id": u.id, "name": u.name, "email": u.email, "phone": u.phone or "",
+                       "goal": u.goal, "dosha": u.dosha, "xp": u.xp,
+                       "joined": u.created.isoformat() if u.created else None} for u in rows]}
 
 if __name__ == "__main__":
     import uvicorn
